@@ -2,6 +2,7 @@ import sql_tools
 import sqlite3
 import time
 import pandas as pd
+import os
 import requests
 from datetime import datetime, timedelta
 import multiprocessing
@@ -17,9 +18,16 @@ class Candler():
     time_difference = None
     candle_width_seconds = None
     
+    
+    def log(self, message):
+        os.makedirs(os.path.dirname(self.logfile), exist_ok=True)
+        with open(self.filename, "w") as f:
+            f.write(message)
+        return
+    
     def __init__(self,product_id, candle_width_seconds = 60.0000000001 , url = 'https://api.gdax.com'):
         #Initializes Values
-        self.logfile = 'logs/' + product_id + '.txt'
+        self.logfile = '/logs/' + product_id + '.txt'
         self.url = url
         self.product_id = product_id
         self.last_message = datetime.now()
@@ -57,22 +65,20 @@ class Candler():
                     done = True
                     
         except ConnectionError as e:
-            with open(self.logfile, 'a+') as logfile:
-                message = datetime.now().isoformat() + ' -----\n'
-                message = message + 'CONNECTIONERROR\n'
-                message = message + repr(e)
-                logfile.write(message)
-                raise
+            message = datetime.now().isoformat() + ' -----\n'
+            message = message + 'CONNECTIONERROR\n'
+            message = message + repr(e)
+            self.log(message)
+            raise
             
 
         self.r = r
         if r.status_code != 200:
-            with open( self.logfile, 'a+') as logfile:
-                message = datetime.now().isoformat()+ ' ---- '
-                message = message + 'staus_code: {}'.format(r.status_code)
-                message = message + 'reason: {}'.format(r.reason)
-                message = message + 'text: {}\n'.format(r.text)
-                logfile.write( message  )
+            message = datetime.now().isoformat()+ ' ---- '
+            message = message + 'staus_code: {}'.format(r.status_code)
+            message = message + 'reason: {}'.format(r.reason)
+            message = message + 'text: {}\n'.format(r.text)
+            self.log( message  )
         self.last_message = datetime.now()
         return r.json()
 
@@ -153,6 +159,8 @@ ids = ['LTC-EUR',
  'BTC-GBP',
  'BTC-EUR',
  'BTC-USD']
+
+
 
 def doit(iden):
     candler = Candler(iden)
