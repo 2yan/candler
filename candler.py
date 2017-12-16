@@ -136,6 +136,3 @@ class Candler():
                 update_candles()
                 current_minute = now
 
-product_id = input('Type in Product id\n')
-candler = Candler(product_id)
-candler.tuner()
