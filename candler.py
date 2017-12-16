@@ -4,15 +4,13 @@ import time
 import pandas as pd
 import requests
 from datetime import datetime, timedelta
-import threading
 
 class Candler():
     
     r = None
     url = None
-    tuner = None
     fire = None
-    stopped = True
+
     product_id = None
     last_message = None
     time_difference = None
@@ -21,25 +19,19 @@ class Candler():
     def __init__(self,product_id, candle_width_seconds = 60.0000000001 , url = 'https://api.gdax.com'):
         #Initializes Values
         self.url = url
-        self.stopped = True
+
         self.product_id = product_id
         self.last_message = datetime.now()
         self.candle_width_seconds = candle_width_seconds
         self.fire = sql_tools.IcePick(sqlite3, 'fire.db')
         self.time_difference = pd.to_datetime(self.__get('/time')['iso']) - datetime.now()
         
-        #end = datetime.now() - timedelta(seconds = 60 * 60 * 12)
-        #start = end - timedelta(seconds = 60 * 200)
-        #self.initalize(products['id'], start, end, 60.0000000000001)
-        self.tuner = threading.Thread(target = self.__tuner)
-        self.tuner.start()
-        
-    def start(self):
-        #Will start the live candle download thread
-        self.stopped = False
-    def stop(self):
-        #Will stop the live canlde download thread
-        self.stopped = True
+        end = datetime.now() - timedelta(seconds = 60 * 60 * 12)
+        start = end - timedelta(seconds = 60 * 200)
+        candles = self.get_candles( start, end, candle_width_seconds)
+        with sqlite3.connect('fire.db', check_same_thread = False) as con:
+            candles.to_sql(product_id, con, if_exists = 'replace')
+            con.commit()
         
     def __get(self, path, params=None):
         #Requests passthrough, tries to avoid the too many requests code by adding pauses
@@ -47,10 +39,10 @@ class Candler():
         now = datetime.now()
         if (now - self.last_message).total_seconds() <= 1:
             time.sleep(1)
-        r = requests.get(self.url + path, params=params, timeout=30, verify = False)
+        r = requests.get(self.url + path, params=params, timeout=30, verify = True)
         if r.status_code == 429:
             time.sleep(2)
-            r = requests.get(self.url + path, params=params, timeout=30, verify = False)
+            r = requests.get(self.url + path, params=params, timeout=30, verify = True)
         self.r = r
         self.last_message = datetime.now()
         return r.json()
@@ -75,7 +67,7 @@ class Candler():
     
     def add_candles(self, candles):
         #adds Downloaded Candles to the SQL database
-        current = self.__fire.get_data(self.product_id, ['time'])
+        current = self.fire.get_data(self.product_id, ['time'])
         s1 = candles.index
         s2 = current['time']
         remove_list = pd.Series(list(set(s1).intersection(set(s2))))
@@ -91,23 +83,24 @@ class Candler():
         return 
 
     
-    def __tuner(self):
+    def tuner(self):
         #Runs concurrently in an extra thread and keeps the candles updated. 
         def update_candles():
-            print('updating')
+            print('updating {}'.format(datetime.now()))
             #Downloads the last two candles and adds them, is really only useful for live updates. 
             end = datetime.now()
             start = end - timedelta(seconds = self.candle_width_seconds * 2)
-            candles = self.get_candles(self.product_id, start=start, end=end, granularity=self.candle_width_seconds)
-            self.add_candles(self.product_id, candles)
+            candles = self.get_candles( start=start, end=end, granularity=self.candle_width_seconds)
+            print(candles.iloc[len(candles) - 2])
+            self.add_candles( candles)
         
-        current_minute = datetime.now().minute
+        current_minute = datetime.now().minute - 1
         while True:
-            if not self.stopped:
-                
-                now = datetime.now().minute
-                if now != current_minute:
-                    update_candles()
-                    current_minute = now
-    
-candler = Candler('ETH-USD')
+            now = datetime.now().minute
+            if now != current_minute:
+                update_candles()
+                current_minute = now
+
+product_id = input('Type in Product id\n')
+candler = Candler(product_id)
+candler.tuner()
